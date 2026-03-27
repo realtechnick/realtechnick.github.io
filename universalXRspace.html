@@ -1,4 +1,4 @@
-<!doctype html>
+!doctype html>
 <html lang="en">
   <head>
     <title>Universal WebXR Playground | XR Blocks</title>
@@ -39,7 +39,7 @@ import * as xb from 'xrblocks';
 /**
  * Universal Interaction Script
  * Demonstrates:
- * 1. Immersive VR Environment (Transition from MR)
+ * 1. Immersive VR Environment with high-quality background texture
  * 2. Spatial UI (Panels/Grids/Buttons)
  * 3. Hand/Controller Interactivity (Touch/Grab)
  */
@@ -53,31 +53,44 @@ class MainScript extends xb.Script {
 
   async init() {
     // 1. Setup Lighting
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x666666, 3);
+    // We use a slightly warmer light to match the indoor "room" aesthetic
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 3);
     this.add(hemiLight);
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 2);
     dirLight.position.set(1, 2, 1);
     this.add(dirLight);
 
-    // 2. Trigger VR Mode
-    // By default, WebXR sessions often start in AR (Passthrough). 
-    // We explicitly tell XR Blocks to transition to VR with a themed background.
+    // 2. Load the "Aesthetic Room" Environment
+    // We fetch the standard XR Blocks background texture to use as the VR environment
+    const textureLoader = new THREE.TextureLoader();
+    const envTexture = await textureLoader.loadAsync('https://cdn.jsdelivr.net/gh/xrblocks/xrblocks@main/build/assets/textures/background.webp');
+    envTexture.mapping = THREE.EquirectangularReflectionMapping;
+    envTexture.colorSpace = THREE.SRGBColorSpace;
+
+    // Apply the texture to the global scene background and environment lighting
+    xb.core.scene.background = envTexture;
+    xb.core.scene.environment = envTexture;
+
+    // 3. Start in VR Mode
     if (xb.core.transition) {
-      xb.core.transition.toVR({ color: 0x121212 });
+      // Transition to VR mode. Since we set xb.core.scene.background, this 
+      // texture will now appear in the headset instead of the grey void.
+      xb.core.transition.toVR();
     }
 
-    // 3. Create a Grabbable Object
+    // 4. Create a Grabbable Object
     const geometry = new THREE.IcosahedronGeometry(0.15, 1);
-    const material = new THREE.MeshPhongMaterial({
+    const material = new THREE.MeshStandardMaterial({
       color: 0x4285f4,
-      shininess: 100,
+      metalness: 0.1,
+      roughness: 0.2,
     });
     this.grabTarget = new THREE.Mesh(geometry, material);
     this.grabTarget.position.set(0, 1.2, -0.6);
     this.add(this.grabTarget);
 
-    // 4. Create a Spatial UI Panel
+    // 5. Create a Spatial UI Panel
     this.createUI();
   }
 
@@ -93,13 +106,13 @@ class MainScript extends xb.Script {
     const grid = panel.addGrid();
 
     grid.addRow({ weight: 0.3 }).addText({
-      text: 'Immersive VR Mode',
+      text: 'Immersive Environment',
       fontSize: 0.08,
       fontColor: '#ffffff',
     });
 
     grid.addRow({ weight: 0.2 }).addText({
-      text: 'Now in a fully virtual environment.',
+      text: 'The aesthetic room is now visible in VR.',
       fontSize: 0.04,
       fontColor: '#bdc1c6',
     });
@@ -132,7 +145,7 @@ class MainScript extends xb.Script {
     });
     modeBtn.onTriggered = () => {
       if (xb.core.transition.currentMode === 'AR') {
-        xb.core.transition.toVR({ color: 0x121212 });
+        xb.core.transition.toVR();
       } else {
         xb.core.transition.toAR();
       }
@@ -181,9 +194,7 @@ class MainScript extends xb.Script {
 document.addEventListener('DOMContentLoaded', () => {
   const options = new xb.Options();
   
-  // CRITICAL: Enable XR Transitions to allow switching between AR and VR
   options.enableXRTransitions();
-  
   options.enableUI();
   options.enableHands();
   options.reticles.enabled = true;
