@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Universal WebXR Playground | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <link type="text/css" rel="stylesheet" href="https://xrblocks.github.io/css/xr.css" />
+    <script>
+      window.litDisableBundleWarning = true;
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/",
+          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
+          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
+          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
+          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
+          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+          "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
+          "lit/": "https://esm.run/lit@3/",
+          "xrblocks": "https://cdn.jsdelivr.net/npm/xrblocks@0.11.0/build/xrblocks.js",
+          "xrblocks/addons/": "https://cdn.jsdelivr.net/npm/xrblocks@0.11.0/build/addons/"
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <script type="module">
+import 'xrblocks/addons/simulator/SimulatorAddons.js';
+import * as THREE from 'three';
+import * as xb from 'xrblocks';
+
+/**
+ * Universal Interaction Script
+ * Demonstrates:
+ * 1. Spatial UI (Panels/Grids/Buttons)
+ * 2. Hand/Controller Interactivity (Touch/Grab)
+ * 3. Responsive WebXR Design
+ */
+class MainScript extends xb.Script {
+  constructor() {
+    super();
+    this.isGrabbing = false;
+    this._handToObject = null;
+    this.grabTarget = null;
+  }
+
+  async init() {
+    // 1. Setup Lighting
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 3);
+    this.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+    dirLight.position.set(1, 2, 1);
+    this.add(dirLight);
+
+    // 2. Create a Grabbable Object
+    const geometry = new THREE.IcosahedronGeometry(0.15, 1);
+    const material = new THREE.MeshPhongMaterial({
+      color: 0x4285f4,
+      shininess: 100,
+    });
+    this.grabTarget = new THREE.Mesh(geometry, material);
+    // Position it at a comfortable distance for Quest/Android XR users
+    this.grabTarget.position.set(0, 1.2, -0.6);
+    this.add(this.grabTarget);
+
+    // 3. Create a Spatial UI Panel
+    this.createUI();
+  }
+
+  createUI() {
+    const panel = new xb.SpatialPanel({
+      width: 1.2,
+      height: 0.8,
+      backgroundColor: '#202124ee',
+    });
+    // Position UI slightly higher and further back than the interactable object
+    panel.position.set(0, 1.6, -1.2);
+    this.add(panel);
+
+    const grid = panel.addGrid();
+
+    // Title Row
+    grid.addRow({ weight: 0.3 }).addText({
+      text: 'Universal WebXR',
+      fontSize: 0.08,
+      fontColor: '#ffffff',
+    });
+
+    // Instructions Row
+    grid.addRow({ weight: 0.2 }).addText({
+      text: 'Pinch to grab the orb or use the buttons below.',
+      fontSize: 0.04,
+      fontColor: '#bdc1c6',
+    });
+
+    // Control Row
+    const ctrlRow = grid.addRow({ weight: 0.5 });
+    
+    // Reset Button
+    const resetBtn = ctrlRow.addCol({ weight: 0.5 }).addIconButton({
+      text: 'refresh',
+      fontSize: 0.5,
+    });
+    resetBtn.onTriggered = () => {
+      this.grabTarget.position.set(0, 1.2, -0.6);
+      this.grabTarget.material.color.setHex(0x4285f4);
+    };
+
+    // Color Toggle Button
+    const colorBtn = ctrlRow.addCol({ weight: 0.5 }).addIconButton({
+      text: 'palette',
+      fontSize: 0.5,
+    });
+    colorBtn.onTriggered = () => {
+      this.grabTarget.material.color.setHex(Math.random() * 0xffffff);
+    };
+
+    panel.updateLayouts();
+  }
+
+  // --- Grab Logic (Works with Quest Hand Tracking or Controllers) ---
+
+  onObjectGrabStart(event) {
+    if (event.object !== this.grabTarget || this.isGrabbing) return;
+    
+    this.isGrabbing = true;
+    this.grabTarget.material.emissive.setHex(0x333333);
+
+    // Calculate relative transform
+    this.grabTarget.updateMatrixWorld(true);
+    event.hand.updateMatrixWorld(true);
+
+    const H0 = new THREE.Matrix4().copy(event.hand.matrixWorld);
+    const O0 = new THREE.Matrix4().copy(this.grabTarget.matrixWorld);
+    this._handToObject = new THREE.Matrix4().copy(H0).invert().multiply(O0);
+  }
+
+  onObjectGrabbing(event) {
+    if (!this.isGrabbing || !this._handToObject) return;
+
+    event.hand.updateMatrixWorld(true);
+    const H = new THREE.Matrix4().copy(event.hand.matrixWorld);
+    const O = new THREE.Matrix4().multiplyMatrices(H, this._handToObject);
+
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+    O.decompose(pos, quat, scl);
+
+    this.grabTarget.position.copy(pos);
+    this.grabTarget.quaternion.copy(quat);
+  }
+
+  onObjectGrabEnd() {
+    this.isGrabbing = false;
+    this._handToObject = null;
+    this.grabTarget.material.emissive.setHex(0x000000);
+  }
+
+  update() {
+    // Optional: add some idle animation to the orb if not being grabbed
+    if (!this.isGrabbing && this.grabTarget) {
+      this.grabTarget.rotation.y += 0.01;
+      this.grabTarget.position.y += Math.sin(Date.now() * 0.002) * 0.0005;
+    }
+  }
+}
+
+// Global initialization
+document.addEventListener('DOMContentLoaded', () => {
+  const options = new xb.Options();
+  
+  // Enable standard XR features
+  options.enableUI();
+  options.enableHands();
+  options.reticles.enabled = true;
+  
+  // Custom XR Button setup
+  options.xrButton.startText = 'ENTER WEBXR';
+  
+  // Initialize the engine
+  xb.add(new MainScript());
+  xb.init(options);
+});
+</script>
+  </body>
+</html>
