@@ -39,9 +39,9 @@ import * as xb from 'xrblocks';
 /**
  * Universal Interaction Script
  * Demonstrates:
- * 1. Spatial UI (Panels/Grids/Buttons)
- * 2. Hand/Controller Interactivity (Touch/Grab)
- * 3. Responsive WebXR Design
+ * 1. Immersive VR Environment (Transition from MR)
+ * 2. Spatial UI (Panels/Grids/Buttons)
+ * 3. Hand/Controller Interactivity (Touch/Grab)
  */
 class MainScript extends xb.Script {
   constructor() {
@@ -53,25 +53,31 @@ class MainScript extends xb.Script {
 
   async init() {
     // 1. Setup Lighting
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 3);
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x666666, 3);
     this.add(hemiLight);
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 2);
     dirLight.position.set(1, 2, 1);
     this.add(dirLight);
 
-    // 2. Create a Grabbable Object
+    // 2. Trigger VR Mode
+    // By default, WebXR sessions often start in AR (Passthrough). 
+    // We explicitly tell XR Blocks to transition to VR with a themed background.
+    if (xb.core.transition) {
+      xb.core.transition.toVR({ color: 0x121212 });
+    }
+
+    // 3. Create a Grabbable Object
     const geometry = new THREE.IcosahedronGeometry(0.15, 1);
     const material = new THREE.MeshPhongMaterial({
       color: 0x4285f4,
       shininess: 100,
     });
     this.grabTarget = new THREE.Mesh(geometry, material);
-    // Position it at a comfortable distance for Quest/Android XR users
     this.grabTarget.position.set(0, 1.2, -0.6);
     this.add(this.grabTarget);
 
-    // 3. Create a Spatial UI Panel
+    // 4. Create a Spatial UI Panel
     this.createUI();
   }
 
@@ -81,41 +87,37 @@ class MainScript extends xb.Script {
       height: 0.8,
       backgroundColor: '#202124ee',
     });
-    // Position UI slightly higher and further back than the interactable object
     panel.position.set(0, 1.6, -1.2);
     this.add(panel);
 
     const grid = panel.addGrid();
 
-    // Title Row
     grid.addRow({ weight: 0.3 }).addText({
-      text: 'Universal WebXR',
+      text: 'Immersive VR Mode',
       fontSize: 0.08,
       fontColor: '#ffffff',
     });
 
-    // Instructions Row
     grid.addRow({ weight: 0.2 }).addText({
-      text: 'Pinch to grab the orb or use the buttons below.',
+      text: 'Now in a fully virtual environment.',
       fontSize: 0.04,
       fontColor: '#bdc1c6',
     });
 
-    // Control Row
     const ctrlRow = grid.addRow({ weight: 0.5 });
     
-    // Reset Button
-    const resetBtn = ctrlRow.addCol({ weight: 0.5 }).addIconButton({
+    // Reset Position
+    const resetBtn = ctrlRow.addCol({ weight: 0.33 }).addIconButton({
       text: 'refresh',
       fontSize: 0.5,
     });
     resetBtn.onTriggered = () => {
       this.grabTarget.position.set(0, 1.2, -0.6);
-      this.grabTarget.material.color.setHex(0x4285f4);
+      this.grabTarget.quaternion.set(0, 0, 0, 1);
     };
 
-    // Color Toggle Button
-    const colorBtn = ctrlRow.addCol({ weight: 0.5 }).addIconButton({
+    // Random Color
+    const colorBtn = ctrlRow.addCol({ weight: 0.33 }).addIconButton({
       text: 'palette',
       fontSize: 0.5,
     });
@@ -123,21 +125,28 @@ class MainScript extends xb.Script {
       this.grabTarget.material.color.setHex(Math.random() * 0xffffff);
     };
 
+    // Toggle Back to AR (Passthrough)
+    const modeBtn = ctrlRow.addCol({ weight: 0.34 }).addIconButton({
+      text: 'visibility',
+      fontSize: 0.5,
+    });
+    modeBtn.onTriggered = () => {
+      if (xb.core.transition.currentMode === 'AR') {
+        xb.core.transition.toVR({ color: 0x121212 });
+      } else {
+        xb.core.transition.toAR();
+      }
+    };
+
     panel.updateLayouts();
   }
 
-  // --- Grab Logic (Works with Quest Hand Tracking or Controllers) ---
-
   onObjectGrabStart(event) {
     if (event.object !== this.grabTarget || this.isGrabbing) return;
-    
     this.isGrabbing = true;
     this.grabTarget.material.emissive.setHex(0x333333);
-
-    // Calculate relative transform
     this.grabTarget.updateMatrixWorld(true);
     event.hand.updateMatrixWorld(true);
-
     const H0 = new THREE.Matrix4().copy(event.hand.matrixWorld);
     const O0 = new THREE.Matrix4().copy(this.grabTarget.matrixWorld);
     this._handToObject = new THREE.Matrix4().copy(H0).invert().multiply(O0);
@@ -145,16 +154,13 @@ class MainScript extends xb.Script {
 
   onObjectGrabbing(event) {
     if (!this.isGrabbing || !this._handToObject) return;
-
     event.hand.updateMatrixWorld(true);
     const H = new THREE.Matrix4().copy(event.hand.matrixWorld);
     const O = new THREE.Matrix4().multiplyMatrices(H, this._handToObject);
-
     const pos = new THREE.Vector3();
     const quat = new THREE.Quaternion();
     const scl = new THREE.Vector3();
     O.decompose(pos, quat, scl);
-
     this.grabTarget.position.copy(pos);
     this.grabTarget.quaternion.copy(quat);
   }
@@ -166,27 +172,23 @@ class MainScript extends xb.Script {
   }
 
   update() {
-    // Optional: add some idle animation to the orb if not being grabbed
     if (!this.isGrabbing && this.grabTarget) {
-      this.grabTarget.rotation.y += 0.01;
-      this.grabTarget.position.y += Math.sin(Date.now() * 0.002) * 0.0005;
+      this.grabTarget.rotation.y += 0.005;
     }
   }
 }
 
-// Global initialization
 document.addEventListener('DOMContentLoaded', () => {
   const options = new xb.Options();
   
-  // Enable standard XR features
+  // CRITICAL: Enable XR Transitions to allow switching between AR and VR
+  options.enableXRTransitions();
+  
   options.enableUI();
   options.enableHands();
   options.reticles.enabled = true;
+  options.xrButton.startText = 'ENTER IMMERSIVE VR';
   
-  // Custom XR Button setup
-  options.xrButton.startText = 'ENTER WEBXR';
-  
-  // Initialize the engine
   xb.add(new MainScript());
   xb.init(options);
 });
